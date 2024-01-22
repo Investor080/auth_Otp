@@ -1,0 +1,23 @@
+{
+  "name": "auth-otp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ibroraheem/auth-otp.git"
+  },
+  "keywords": [
+    "Authentication",
+    "BoilerPlate"
+  ],
+  "author": "Ibrahim Abdulraheem & Lawal Alamayo",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ibroraheem/auth-otp/issues"
+  },
+  "homepage": "https://github.com/ibroraheem/auth-otp#readme"
+}
