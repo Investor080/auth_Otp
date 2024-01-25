@@ -1,15 +1,13 @@
 const express = require('express');
-const { signUp, verifyOtp, resendOtpVerificationCode } = require('../controller/auth');
-
-
 const router = express.Router();
 
-router.route("/signup").post(signUp)
-router.route("/verifyotp").post(verifyOtp)
-router.route("/resendotpverificationcode").post(resendOtpVerificationCode)
+const { signUp, verifyOtp, resendOtpVerificationCode, forgotPassword, resetPassword } = require('../controller/auth');
 
-
-
+router.post("/signup", signUp);
+router.post("/verify-otp", verifyOtp);
+router.post("/resend-otp", resendOtpVerificationCode);
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password", resetPassword);
 
 
 
