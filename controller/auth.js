@@ -1,87 +1,100 @@
 require('dotenv').config();
+require('dotenv').config();
 const User = require('../models/user');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
-const bcrypt = require('bcryptjs')
-const userOtpVerification = require('../models/userOtpVerification');
+const bcrypt = require('bcryptjs');
+const passport = require('passport');
+const LocalStrategy = require('passport-local').Strategy;
 
-
-const signUp = async (req, res) => {
-    const { username, email, password } = req.body
-    if (!username) {
-        return res.json({ error: "Username is required" })
-    }
-    if (!email) {
-        return res.json({ error: "Email is required" })
-    }
-    if (!password) {
-        return res.json({ error: "Password is required" })
-    }
-    if (!username || !email || !password) {
-        return res.json({ error: "All fields are required" })
-    }
-    const existingUser = await User.findOne({ email })
-    if (existingUser) {
-        return res.status(400).json({ message: "User already exist" })
-    }
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-    const hashedOtp = await bcrypt.hash(otp, salt);
-    const newUser = new User({
-        username,
-        email,
-        password: hashedPassword,
-        isVerified: false,
-        otp: hashedOtp,
-        otpExpires: Date.now() + 3600000,
-    });
-
-    newUser
-        .save()
-        .then((result) => {
-            sendOtpVerificationEmail(result, res);
-        })
-        .catch((error) => {
-            console.log(error)
-            return res.status(500).json({ error: error.message })
-        });
-
-
-    const sendOtpVerificationEmail = async ({ _id, email }, res) => {
+passport.use('signup', new LocalStrategy({
+    usernameField: 'email',
+    passwordField: 'password',
+    passReqToCallback: true
+},
+    async (req, email, password, done) => {
         try {
-            const otp = `${Math.floor(1000 + Math.random() * 9000)}`;
-            const transporter = nodemailer.createTransport({
-                service: 'Gmail',
-                auth: {
-                    user: process.env.my_email,
-                    pass: process.env.pass
-                },
+            // Check if user with the same email exist
+            const user = await User.findOne({ email });
+            if (user) {
+                return done(null, false, { message: 'User already exist' });
+            }
+
+            // Hash the password using bcrypt
+            const salt = await bcrypt.genSalt(10);
+            const hashedPassword = await bcrypt.hash(password, salt);
+
+            // Create a new user
+            const newUser = new User({
+                username: req.body.username,
+                email: email,
+                password: hashedPassword,
+                isVerified: false,
+                otp: hashedPassword,
+                otpExpires: Date.now() + 3600000,
             });
-            const mailOptions = {
-                from: process.env.email,
-                to: email,
-                subject: 'Verify Your Email',
-                html: `<p>Enter <b>${otp}</b> in the app to verify your email address and complete the signup process <p><p>This code <b>expires in 1hour</b>.</p>`
-            };
-            transporter.sendMail(mailOptions, function (error, info) {
-                if (error) {
-                    console.log(error);
-                };
-            });
-            res.json({
-                status: "PENDING",
-                message: "Verification otp email sent",
-                data: {
-                    userId: _id,
-                    email,
-                },
-            });
+
+            await newUser.save();
+
+            // Create a token
+            const token = jwt.sign({ _id: newUser._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+
+            return done(null, { newUser, token });
         } catch (error) {
-            console.log(error)
-            return res.status(500).json({ error: error.message })
+            return done(error);
         }
-    };
-}
+    })
+);
+
+const signUp = async (req, res, next) => {
+    passport.authenticate('signup', (err, data, info) => {
+        if (err) {
+            console.log(err);
+        }
+        if (info != undefined) {
+            console.log(info.message);
+            res.status(403).send(info.message);
+        } else {
+            sendOtpVerificationEmail(data.newUser, res);
+            res.status(200).send(data);
+        }
+    })(req, res, next);
+};
+
+const sendOtpVerificationEmail = async ({ _id, email }, res) => {
+    try {
+        const otp = `${Math.floor(1000 + Math.random() * 9000)}`;
+        const transporter = nodemailer.createTransport({
+            service: 'Gmail',
+            auth: {
+                user: process.env.my_email,
+                pass: process.env.pass
+            },
+        });
+        const mailOptions = {
+            from: process.env.email,
+            to: email,
+            subject: 'Verify Your Email',
+            html: `<p>Enter <b>${otp}</b> in the app to verify your email address and complete the signup process <p><p>This code <b>expires in 1hour</b>.</p>`
+        };
+        transporter.sendMail(mailOptions, function (error, info) {
+            if (error) {
+                console.log(error);
+            };
+        });
+        res.json({
+            status: "PENDING",
+            message: "Verification otp email sent",
+            data: {
+                userId: _id,
+                email,
+            },
+        });
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json({ error: error.message })
+    }
+};
 
 
 const verifyOtp = async (req, res) => {
@@ -158,14 +171,7 @@ const resendOtpVerificationCode = async (req, res) => {
 const login = async (req, res) => {
     const { email, password } = req.body
     try {
-        const existingUser = User.findOne({ email })
-        if (!existingUser) {
-            return res.status(403).json({ message: "User Not Found" })
-        }
-        const passwordMatch = await bcrypt.compare(password, existingUser.password)
-        if (!passwordMatch) {
-            return res.status(403).json({ message: "Invalid Password" })
-        }
+        //login logic using passport
     } catch {
         console.log(error)
         return res.status(500).json({ error: error.message })
