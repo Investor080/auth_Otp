@@ -170,35 +170,40 @@ const resendOtpVerificationCode = async (req, res) => {
 };
 
 const login = async (req, res) => {
-    const { email, password } = req.body
+    const { email, password } = req.body;
     try {
-        const existingUser = await User.findOne({email})
-        if(!existingUser){
-            return res.json ({error: "User not found. Please signup to continue"})
+        const existingUser = await User.findOne({ email });
+        if (!existingUser) {
+            return res.json({ error: "User not found. Please signup to continue" });
         }
-        const passwordMatch = await bcrypt.compare(password, existingUser.password)
-        if(!passwordMatch){
-            return res.json({error: "Invalid Credentials"})
+        const passwordMatch = await bcrypt.compare(password, existingUser.password);
+        if (!passwordMatch) {
+            return res.json({ error: "Invalid Credentials" });
         }
 
-        const user = new User({
-            email,
-            password
-        })
-
-        req.login(user, function(err){
-            if(err){
-                return res.json(err)
+        req.login(existingUser, { session: false }, (err) => {
+            if (err) {
+                return res.json(err);
             }
-            passport.authenticate("local")(req, res, function(){
-                res.json({message: "You have successfully logged in"})
-            })
-        })
-    } catch {
-        console.log(error)
-        return res.status(500).json({ error: error.message })
+
+            passport.authenticate("local", { session: false }, (err, user, info) => {
+                if (err || !user) {
+                    return res.status(400).json({
+                        message: 'Something is not right',
+                        user: user
+                    });
+                }
+
+
+                const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+                return res.json({ user: { email: user.email, username: user.username }, token });
+            })(req, res);
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ error: error.message });
     }
-}
+};
 
 const forgotPassword = async (req, res) => {
     try {
