@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const bcrypt = require('bcryptjs');
 const passport = require('passport');
+const User = require('../models/user');
 const LocalStrategy = require('passport-local').Strategy;
 
 passport.use('signup', new LocalStrategy({
@@ -171,7 +172,28 @@ const resendOtpVerificationCode = async (req, res) => {
 const login = async (req, res) => {
     const { email, password } = req.body
     try {
-        //login logic using passport
+        const existingUser = await User.findOne({email})
+        if(!existingUser){
+            return res.json ({error: "User not found. Please signup to continue"})
+        }
+        const passwordMatch = await bcrypt.compare(password, existingUser.password)
+        if(!passwordMatch){
+            return res.json({error: "Invalid Credentials"})
+        }
+
+        const user = new User({
+            email,
+            password
+        })
+
+        req.login(user, function(err){
+            if(err){
+                return res.json(err)
+            }
+            passport.authenticate("local")(req, res, function(){
+                res.json({message: "You have successfully logged in"})
+            })
+        })
     } catch {
         console.log(error)
         return res.status(500).json({ error: error.message })
@@ -242,6 +264,7 @@ module.exports = {
     signUp,
     verifyOtp,
     resendOtpVerificationCode,
+    login,
     forgotPassword,
     resetPassword
 }
