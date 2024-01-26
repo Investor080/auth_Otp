@@ -25,12 +25,15 @@ const signUp = async (req, res) => {
         return res.status(400).json({ message: "User already exist" })
     }
     const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt)
+    const hashedPassword = await bcrypt.hash(password, salt);
+    const hashedOtp = await bcrypt.hash(otp, salt);
     const newUser = new User({
         username,
         email,
         password: hashedPassword,
-        isVerified: false
+        isVerified: false,
+        otp: hashedOtp,
+        otpExpires: Date.now() + 3600000,
     });
 
     newUser
@@ -60,15 +63,6 @@ const signUp = async (req, res) => {
                 subject: 'Verify Your Email',
                 html: `<p>Enter <b>${otp}</b> in the app to verify your email address and complete the signup process <p><p>This code <b>expires in 1hour</b>.</p>`
             };
-            const salt = await bcrypt.genSalt(10);
-            const hashedOtp = await bcrypt.hash(otp, salt);
-            const newOtpVerification = new userOtpVerification({
-                userId: _id,
-                otp: hashedOtp,
-                createdAt: Date.now(),
-                expiresAt: Date.now() + 3600000
-            });
-            newOtpVerification.save();
             transporter.sendMail(mailOptions, function (error, info) {
                 if (error) {
                     console.log(error);
@@ -96,32 +90,20 @@ const verifyOtp = async (req, res) => {
         if (!userId || !otp) {
             throw Error("Empty otp details are not allowed");
         } else {
-            const userOtpRecords = await userOtpVerification.find({ userId });
-            if (userOtpRecords.lenght <= 0) {
-                throw Error(
-                    "Account record doesn't exist or has been verified already. Please signUp or Login"
-                );
-            } else {
-                const { expiresAt } = userOtpRecords[0];
-                const hashedOtp = userOtpRecords[0].otp;
-
-                if (expiresAt < Date.now()) {
-                    await verificationToken.deleteMany({ userId });
-                    throw Error("Code has expired. Please request again.");
-                } else {
-                    const validOtp = bcrypt.compare(otp, hashedOtp);
-                    if (!validOtp) {
-                        throw Error("Invalid code. Check your inbox.");
-                    } else {
-                        await User.updateOne({ _id: userId }, { isVerified: true });
-                        await userOtpVerification.deleteMany({ userId });
-                        res.json({
-                            status: "VERIFIED",
-                            message: 'User email verified successfully.'
-                        });
-                    }
-                }
+            const existingUser = await User.findById(userId);
+            if (!existingUser) {
+                throw Error("User does not exist");
             }
+            const validOtp = await bcrypt.compare(otp, existingUser.otp);
+            if (!validOtp) {
+                throw Error("Invalid OTP");
+            }
+            if (existingUser.otpExpires < Date.now()) {
+                throw Error("OTP has expired");
+            }
+            existingUser.isVerified = true;
+            await existingUser.save();
+            res.status(200).json({ status: "SUCCESS", message: "OTP verified successfully" });
         }
     } catch (error) {
         console.log(error)
@@ -135,8 +117,38 @@ const resendOtpVerificationCode = async (req, res) => {
         if (!userId || !email) {
             throw Error("Empty user details are not allowed");
         } else {
-            await userOtpVerification.deleteMany({ userId });
-            sendOtpVerificationEmail({ _id: userId, email }, res);
+            const existingUser = await User.findById(userId);
+            if (!existingUser) {
+                throw Error("User does not exist");
+            }
+            if (existingUser.isVerified) {
+                throw Error("User already verified");
+            }
+            const otp = `${Math.floor(1000 + Math.random() * 9000)}`;
+            const salt = await bcrypt.genSalt(10);
+            const hashedOtp = await bcrypt.hash(otp, salt);
+            existingUser.otp = hashedOtp;
+            existingUser.otpExpires = Date.now() + 3600000;
+            await existingUser.save();
+            const transporter = nodemailer.createTransport({
+                service: 'Gmail',
+                auth: {
+                    user: process.env.my_email,
+                    pass: process.env.pass
+                },
+            });
+            const mailOptions = {
+                from: process.env.email,
+                to: email,
+                subject: 'Verify Your Email',
+                html: `<p>Enter <b>${otp}</b> in the app to verify your email address and complete the signup process <p><p>This code <b>expires in 1hour</b>.</p>`
+            };
+            transporter.sendMail(mailOptions, function (error, info) {
+                if (error) {
+                    console.log(error);
+                };
+            });
+            res.status(200).json({ status: "SUCCESS", message: "Verification otp email sent" });
         }
     } catch (error) {
         res.status(500).json({ status: "FAILED", error: error.message })
@@ -166,7 +178,9 @@ const forgotPassword = async (req, res) => {
         const existingUser = User.findOne({ email: email })
         if (!existingUser) return res.status(403).json({ message: "You do not have an account with us" });
         const otp = `${Math.floor(1000 + Math.random() * 9000)}`;
-        existingUser.passwordResetOtp = otp;
+        const salt = await bcrypt.genSalt(10);
+        const hashedOtp = await bcrypt.hash(otp, salt);
+        existingUser.passwordResetOtp = hashedOtp;
         existingUser.passwordResetOtpExpires = Date.now() + 3600000;
         existingUser.save();
         const transporter = nodemailer.createTransport({
@@ -198,7 +212,8 @@ const resetPassword = async (req, res) => {
         const { email, password, otp } = req.body;
         const existingUser = User.findOne({ email: email })
         if (!existingUser) return res.status(403).json({ message: "You do not have an account with us" });
-        if (existingUser.passwordResetOtp !== otp) return res.status(403).json({ message: "Invalid OTP" });
+        const validOtp = bcrypt.compare(otp, existingUser.passwordResetOtp);
+        if (!validOtp) return res.status(403).json({ message: "Invalid OTP" });
         if (existingUser.passwordResetOtpExpires < Date.now()) return res.status(403).json({ message: "OTP has expired" });
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);

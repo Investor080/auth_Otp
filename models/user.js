@@ -10,6 +10,8 @@ const userSchema = new mongoose.Schema({
     isVerified: { type: Boolean, required: true, default: false },
     passowrdResetOtp: { type: String, },
     passworOtpExpires: { type: Date, },
+    otp: { type: String, },
+    otpExpires: { type: Date, },
 });
 
 userSchema.plugin(passportLocalMongoose)
