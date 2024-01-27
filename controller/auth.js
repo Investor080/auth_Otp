@@ -5,7 +5,6 @@ const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const bcrypt = require('bcryptjs');
 const passport = require('passport');
-const User = require('../models/user');
 const LocalStrategy = require('passport-local').Strategy;
 
 passport.use('signup', new LocalStrategy({
@@ -170,9 +169,9 @@ const resendOtpVerificationCode = async (req, res) => {
 };
 
 const login = async (req, res) => {
-    const { email, password } = req.body;
+    const { identifier, password } = req.body;
     try {
-        const existingUser = await User.findOne({ email });
+        const existingUser = await User.findOne({ $or: [{username: identifier}, {email: identifier}], });
         if (!existingUser) {
             return res.json({ error: "User not found. Please signup to continue" });
         }
